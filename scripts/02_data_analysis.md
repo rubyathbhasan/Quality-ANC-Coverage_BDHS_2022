@@ -1,0 +1,309 @@
+Association of Quality ANC Coverage with Socioeconomic and Demographic
+Factors, BDHS 2022
+================
+Rubyath Binte Hasan
+2026-10-04
+
+# File set up
+
+``` r
+#setting up the file and survey design
+#load libraries
+if (!require("pacman")) install.packages("pacman")
+```
+
+    ## Loading required package: pacman
+
+    ## Warning: package 'pacman' was built under R version 4.5.3
+
+``` r
+pacman::p_load(survey, ggplot2, haven, knitr, tidyr, patchwork)
+
+#load clean data
+anc_final <- readRDS("anc_data_final.rds")
+
+#accounting for survey design
+#stripping of labels to troubleshoot haven package issue
+anc_final$v001 <- as.numeric(haven::zap_labels(anc_final$v001))
+anc_final$v023 <- as.numeric(haven::zap_labels(anc_final$v023))
+anc_final$wt   <- as.numeric(haven::zap_labels(anc_final$wt))
+#creating survey design object with weights
+survey_design <- svydesign(id = ~v001, strata = ~v023, weights = anc_final$wt, data = anc_final)
+```
+
+# Descriptive analysis
+
+``` r
+##univariate analysis 
+#baseline characteristics and weigthed frequency of received care
+
+#variables of interest
+vars <- c("s115_1", "age_group", "v102", "v169a", "v190", "v024")
+var_labels <- c("Education Level", "Mother's Age", "Residence", 
+                "Phone Ownership", "Wealth Quintile", "Division")
+
+#function to calculate weighted counts and percentages
+get_baseline_stats <- function(formula, design) {
+  counts <- svytable(formula, design = design)
+  percs <- prop.table(counts) * 100
+  cbind(Weighted_N = round(counts, 0), Percentage = round(percs, 2))}
+
+#loop through all variables to calculate stats
+table1_list <- lapply(vars, function(var) {
+  form <- as.formula(paste0("~", var))
+  df <- as.data.frame(get_baseline_stats(form, survey_design))
+  df$Category <- rownames(df)
+  df$Variable <- var
+  #reorder columns
+  df[, c("Variable", "Category", "Weighted_N", "Percentage")]})
+
+#combine into one master dataframe
+table1_df <- do.call(rbind, table1_list)
+rownames(table1_df) <- NULL
+
+#renaming variables 
+table1_df$Variable <- factor(table1_df$Variable, 
+                             levels = vars, 
+                             labels = var_labels)
+
+#calculate totals to display in the table headers
+total_unweighted <- nrow(anc_final)
+total_weighted <- round(sum(weights(survey_design)), 0)
+
+#remove repeating category names
+table1_df$Variable <- as.character(table1_df$Variable)
+table1_df$Variable[duplicated(table1_df$Variable)] <- ""
+
+#print table
+kable(table1_df, 
+      col.names = c("Characteristic", 
+                    "Category", 
+                    paste0("Weighted N (Total = ", format(total_weighted, big.mark = ","), ")"), 
+                    "Percentage (%)"),
+      align = c("l", "l", "r", "r"),
+      caption = paste0("Table 1: Baseline Characteristics of the Study Population (Unweighted Sample Size = ", format(total_unweighted, big.mark = ","), ")"),
+      format.args = list(big.mark = ","))
+```
+
+| Characteristic | Category | Weighted N (Total = 5,171) | Percentage (%) |
+|:---|:---|---:|---:|
+| Education Level | No education | 276 | 5.33 |
+|  | Primary incomplete | 545 | 10.53 |
+|  | Primary complete | 648 | 12.53 |
+|  | Secondary incomplete | 2,131 | 41.21 |
+|  | Secondary and Higher | 1,572 | 30.40 |
+| Mother’s Age | \<20 | 741 | 14.33 |
+|  | 20-34 | 3,994 | 77.25 |
+|  | 35-49 | 436 | 8.42 |
+| Residence | Urban | 1,381 | 26.71 |
+|  | Rural | 3,790 | 73.29 |
+| Phone Ownership | Don’t have phone | 1,564 | 30.25 |
+|  | Have phone | 3,606 | 69.75 |
+| Wealth Quintile | Poorest | 1,060 | 20.51 |
+|  | Poorer | 1,080 | 20.89 |
+|  | Middle | 1,063 | 20.56 |
+|  | Richer | 1,024 | 19.80 |
+|  | Richest | 943 | 18.24 |
+| Division | Barishal | 315 | 6.10 |
+|  | Chattogram | 1,146 | 22.17 |
+|  | Dhaka | 1,265 | 24.46 |
+|  | Khulna | 533 | 10.31 |
+|  | Mymensingh | 452 | 8.74 |
+|  | Rajshahi | 544 | 10.53 |
+|  | Rangpur | 582 | 11.25 |
+|  | Sylhet | 333 | 6.45 |
+
+Table 1: Baseline Characteristics of the Study Population (Unweighted
+Sample Size = 5,106)
+
+``` r
+#export baseline characteristics table
+write.csv(table1_df, "Table_1_Baseline_Characteristics.csv", row.names = FALSE)
+```
+
+``` r
+##bivariate analysis
+#cross-tabulation and proportions by Quality ANC
+
+#function to calculate rounded percentages
+calc_prop_table <- function(formula, design) {
+  tbl <- svytable(formula, design = design)
+  pct <- prop.table(tbl, margin = 1) * 100
+  round(pct, 2)}
+
+#proportions of each independent variable
+round_edu    <- calc_prop_table(~ s115_1 + quality_anc, survey_design)
+round_mage   <- calc_prop_table(~ age_group + quality_anc, survey_design)
+round_res    <- calc_prop_table(~ v102 + quality_anc, survey_design)
+round_phn    <- calc_prop_table(~ v169a + quality_anc, survey_design)
+round_wealth <- calc_prop_table(~ v190 + quality_anc, survey_design)
+round_div    <- calc_prop_table(~ v024 + quality_anc, survey_design)
+
+#visualizations
+#function to avoid code repetition
+plot_anc_coverage <- function(data_matrix, x_col_name, x_label) {
+  df <- as.data.frame(data_matrix)
+  colnames(df) <- c(x_col_name, "Quality_ANC_coverage", "Percentage")
+  
+#reverse the factor order so the first category appears at the top
+df[[x_col_name]] <- factor(df[[x_col_name]], levels = rev(levels(factor(df[[x_col_name]]))))
+
+  ggplot(df, aes(x = Percentage, y = .data[[x_col_name]], fill = Quality_ANC_coverage)) +
+    geom_col(position = "stack", width = 0.75, color = "white", linewidth = 0.7) +
+    geom_text(aes(label = paste0(Percentage, "%")), 
+              position = position_stack(vjust = 0.5), 
+              color = "#222222", size = 4, fontface = "bold") + 
+    labs(title = paste("Quality ANC Coverage by", x_label), 
+         x = "Percentage (%)", 
+         y = NULL, 
+         fill = "Received Quality ANC:") + 
+    theme_minimal(base_size = 14) +
+    scale_fill_manual(values = c("No" = "#E0E4E8", "Yes" = "#3A86FF")) +  
+    theme(
+      legend.position = "top", 
+      panel.grid.major.y = element_blank(), 
+      panel.grid.minor = element_blank(),
+      axis.text.y = element_text(size = 13, color = "black"),  
+      axis.text.x = element_text(size = 12, color = "gray40"), 
+      plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+      plot.margin = margin(t = 20, r = 20, b = 20, l = 20))}
+
+#generate plots
+p_edu    <- plot_anc_coverage(round_edu, "Education", "Education Level")
+p_age    <- plot_anc_coverage(round_mage, "Age", "Mother's Age")
+p_res    <- plot_anc_coverage(round_res, "Residence", "Place of Residence")
+p_phn    <- plot_anc_coverage(round_phn, "Phone", "Phone Ownership")
+p_wealth <- plot_anc_coverage(round_wealth, "Wealth", "Wealth Quintile")
+p_div    <- plot_anc_coverage(round_div, "Division", "Division")
+
+# export all plots via a loop
+plot_list <- list(
+  "QANC_by_Education.png" = p_edu,
+  "QANC_by_Age.png"       = p_age,
+  "QANC_by_Residence.png" = p_res,
+  "QANC_by_Phone.png"     = p_phn,
+  "QANC_by_Wealth.png"    = p_wealth,
+  "QANC_by_Division.png"  = p_div)
+
+for (file_name in names(plot_list)) {
+  ggsave(filename = file_name, plot = plot_list[[file_name]], width = 8, height = 6, dpi = 300)}
+
+plot_list
+```
+
+    ## $QANC_by_Education.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+    ## 
+    ## $QANC_by_Age.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-2.png)<!-- -->
+
+    ## 
+    ## $QANC_by_Residence.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-3.png)<!-- -->
+
+    ## 
+    ## $QANC_by_Phone.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-4.png)<!-- -->
+
+    ## 
+    ## $QANC_by_Wealth.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-5.png)<!-- -->
+
+    ## 
+    ## $QANC_by_Division.png
+
+![](02_data_analysis_files/figure-gfm/unnamed-chunk-3-6.png)<!-- -->
+
+``` r
+#combined plots
+combined_dashboard <- (p_age + p_edu) / 
+                      (p_res + p_phn) / 
+                      (p_wealth + p_div) +
+  plot_annotation(title = "Quality ANC Coverage by Socioeconomic and Demographic Factors", theme = theme(plot.title = element_text(size = 22, face = "bold", hjust = 0.5)))
+
+#export combined plot
+ggsave("Dashboard_All_Plots.png", plot = combined_dashboard, width = 16, height = 16, dpi = 300)
+```
+
+# Statistical testing: CI and Rao-Scott Chi-Square
+
+``` r
+#function to calculate CI, P-value, and build a formatted table row
+build_bivariate_row <- function(var_name, var_label, design) {
+  form_by <- as.formula(paste0("~", var_name))
+  form_chisq <- as.formula(paste0("~", var_name, " + quality_anc"))
+  
+#calculate percentages and 95% CIs
+ci_data <- as.data.frame(svyby(~quality_anc, form_by, design, svymean, vartype = "ci"))
+  
+#extract names, percentages, and CIs
+category <- ci_data[[1]]
+pct <- round(ci_data$quality_ancYes * 100, 1)
+ci_l <- round(ci_data$ci_l.quality_ancYes * 100, 1)
+ci_u <- round(ci_data$ci_u.quality_ancYes * 100, 1)
+pct_ci_str <- paste0(pct, " (", ci_l, " - ", ci_u, ")")
+  
+#calculating Rao-Scott Chi-Square p-value
+test <- svychisq(form_chisq, design = design)
+p_str <- format.pval(test$p.value, digits = 3, eps = 0.001)
+  
+#creating a table with percentage, CI and p-values
+df <- data.frame(
+    Characteristic = c(var_label, rep("", length(category) - 1)), 
+    Category = category,
+    `Quality ANC % (95% CI)` = pct_ci_str,
+    `P-value` = c(p_str, rep("", length(category) - 1)),          
+    check.names = FALSE)
+  return(df)}
+
+table2_list <- Map(build_bivariate_row, vars, var_labels, MoreArgs = list(design = survey_design))
+table2_df <- do.call(rbind, table2_list)
+rownames(table2_df) <- NULL
+
+#print table 
+kable(table2_df, 
+      align = c("l", "l", "c", "c"),
+      caption = "Table 2: Bivariate Analysis (Rao-Scott Chi-square) of Factors Associated with Quality ANC")
+```
+
+| Characteristic  | Category             | Quality ANC % (95% CI) | P-value |
+|:----------------|:---------------------|:----------------------:|:-------:|
+| Education Level | No education         |   10.7 (5.2 - 16.3)    | \<0.001 |
+|                 | Primary incomplete   |    9.5 (6.8 - 12.2)    |         |
+|                 | Primary complete     |   14.2 (11.1 - 17.3)   |         |
+|                 | Secondary incomplete |   18.1 (16.1 - 20.1)   |         |
+|                 | Secondary and Higher |   31.5 (28.5 - 34.4)   |         |
+| Mother’s Age    | \<20                 |   14.9 (11.9 - 17.8)   | 0.00329 |
+|                 | 20-34                |    21.2 (19.4 - 23)    |         |
+|                 | 35-49                |    22.2 (17.3 - 27)    |         |
+| Residence       | Urban                |    31 (27.5 - 34.6)    | \<0.001 |
+|                 | Rural                |   16.5 (14.8 - 18.2)   |         |
+| Phone Ownership | Don’t have phone     |   10.6 (8.7 - 12.4)    | \<0.001 |
+|                 | Have phone           |   24.6 (22.7 - 26.6)   |         |
+| Wealth Quintile | Poorest              |    7.9 (6.2 - 9.7)     | \<0.001 |
+|                 | Poorer               |   13.1 (10.7 - 15.5)   |         |
+|                 | Middle               |   18.4 (15.6 - 21.1)   |         |
+|                 | Richer               |   26.3 (23.1 - 29.5)   |         |
+|                 | Richest              |   38.6 (34.6 - 42.7)   |         |
+| Division        | Barishal             |   17.2 (13.9 - 20.5)   | \<0.001 |
+|                 | Chattogram           |   18.9 (15.2 - 22.7)   |         |
+|                 | Dhaka                |    26 (22.1 - 29.8)    |         |
+|                 | Khulna               |   21.1 (16.7 - 25.4)   |         |
+|                 | Mymensingh           |    23.1 (18.2 - 28)    |         |
+|                 | Rajshahi             |   20.3 (15.5 - 25.1)   |         |
+|                 | Rangpur              |    13.9 (11 - 16.8)    |         |
+|                 | Sylhet               |   13.9 (10.6 - 17.2)   |         |
+
+Table 2: Bivariate Analysis (Rao-Scott Chi-square) of Factors Associated
+with Quality ANC
+
+``` r
+#export table
+write.csv(table2_df, "Table_2_Bivariate_Analysis.csv", row.names = FALSE)
+```

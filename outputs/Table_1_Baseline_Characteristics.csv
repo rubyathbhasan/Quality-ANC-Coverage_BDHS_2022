@@ -1,0 +1,26 @@
+"Variable","Category","Weighted_N","Percentage"
+"Education Level","No education",276,5.33
+"","Primary incomplete",545,10.53
+"","Primary complete",648,12.53
+"","Secondary incomplete",2131,41.21
+"","Secondary and Higher",1572,30.4
+"Mother's Age","<20",741,14.33
+"","20-34",3994,77.25
+"","35-49",436,8.42
+"Residence","Urban",1381,26.71
+"","Rural",3790,73.29
+"Phone Ownership","Don't have phone",1564,30.25
+"","Have phone",3606,69.75
+"Wealth Quintile","Poorest",1060,20.51
+"","Poorer",1080,20.89
+"","Middle",1063,20.56
+"","Richer",1024,19.8
+"","Richest",943,18.24
+"Division","Barishal",315,6.1
+"","Chattogram",1146,22.17
+"","Dhaka",1265,24.46
+"","Khulna",533,10.31
+"","Mymensingh",452,8.74
+"","Rajshahi",544,10.53
+"","Rangpur",582,11.25
+"","Sylhet",333,6.45
